@@ -1,0 +1,35 @@
+services:
+  claude-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: claude-dev:latest
+    pull_policy: build        # stops Portainer 2.39.3 from trying to `compose pull` a build-only image
+    container_name: claude-dev
+    restart: unless-stopped
+    init: true
+    stdin_open: true
+    tty: true
+    environment:
+      # --- set these in Portainer's stack environment, do NOT commit real values ---
+      - GH_TOKEN=${GH_TOKEN}
+      - GIT_AUTHOR_NAME=${GIT_AUTHOR_NAME}
+      - GIT_AUTHOR_EMAIL=${GIT_AUTHOR_EMAIL}
+      # keep ALL Claude Code state (login, theme, onboarding, trust, .claude.json)
+      # inside the mounted claude-config volume so it survives rebuilds
+      - CLAUDE_CONFIG_DIR=/root/.claude
+      # --- optional auto-start of Remote Control (see entrypoint.sh + rc-supervisor.sh) ---
+      - AUTO_REMOTE_CONTROL=${AUTO_REMOTE_CONTROL:-0}
+      - WORKSPACE=${WORKSPACE:-/workspace}
+      - RC_RESTART_DELAY=${RC_RESTART_DELAY:-10}
+      - RC_RESCAN_INTERVAL=${RC_RESCAN_INTERVAL:-60}
+      - RC_PERMISSION_MODE=${RC_PERMISSION_MODE:-auto}
+    volumes:
+      - claude-workspace:/workspace        # your project code; survives rebuilds
+      - claude-config:/root/.claude        # persists claude.ai OAuth login
+      - claude-config-json:/root/.config   # persists gh + other tool config
+
+volumes:
+  claude-workspace:
+  claude-config:
+  claude-config-json:

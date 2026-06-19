@@ -12,18 +12,18 @@
 #   WORKSPACE=/workspace      root dir scanned for git repos (default /workspace)
 #   RC_RESTART_DELAY=10       seconds between relaunches (default 10)
 #   RC_RESCAN_INTERVAL=60     seconds between scans for newly-added repos (default 60)
-#   RC_PERMISSION_MODE=bypassPermissions
-#                             permission mode each session starts in. One of:
+#   RC_PERMISSION_MODE=auto   permission mode each session starts in. One of:
 #                             default | acceptEdits | plan | auto | bypassPermissions
 #                             Use 'default' to pass no flag (normal prompting).
-#                             bypassPermissions = no prompts (safe here: isolated container).
+#                             NOTE: bypassPermissions is BLOCKED when running as root
+#                             (this container runs as root), so 'auto' is the default.
 
 set -u
 
 WORKSPACE="${WORKSPACE:-/workspace}"
 RESTART_DELAY="${RC_RESTART_DELAY:-10}"
 RESCAN_INTERVAL="${RC_RESCAN_INTERVAL:-60}"
-PERMISSION_MODE="${RC_PERMISSION_MODE:-bypassPermissions}"
+PERMISSION_MODE="${RC_PERMISSION_MODE:-auto}"
 TMUX_SESSION="cc"
 LOOP_DIR="/tmp/rc-loops"
 

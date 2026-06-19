@@ -6,6 +6,7 @@
 #   AUTO_REMOTE_CONTROL=1     enable
 #   RC_PROJECT_DIR=/workspace project dir the session opens in
 #   RC_SESSION_NAME=claude-dev session title at claude.ai/code
+#   RC_SPAWN_MODE=worktree    same-dir | worktree | session (default worktree)
 #   RC_RESTART_DELAY=10       seconds to wait between relaunches (default 10)
 
 set -u
@@ -13,6 +14,7 @@ set -u
 PROJECT_DIR="${RC_PROJECT_DIR:-/workspace}"
 RC_NAME="${RC_SESSION_NAME:-claude-dev}"
 RESTART_DELAY="${RC_RESTART_DELAY:-10}"
+SPAWN_MODE="${RC_SPAWN_MODE:-worktree}"
 TMUX_SESSION="cc"
 
 log() { echo "[rc-supervisor] $*"; }
@@ -22,10 +24,17 @@ log() { echo "[rc-supervisor] $*"; }
 # waits and logs instead of spinning on instant failures.
 read -r -d '' INNER_LOOP <<EOF || true
 cd '${PROJECT_DIR}'
+SPAWN='${SPAWN_MODE}'
+# worktree mode needs the project dir to be a git repo; fall back to same-dir if not
+if [ "\$SPAWN" = "worktree" ] && ! git -C '${PROJECT_DIR}' rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "[rc-supervisor] '${PROJECT_DIR}' is not a git repo; worktree mode needs one."
+  echo "[rc-supervisor] falling back to --spawn same-dir. Point RC_PROJECT_DIR at a repo for worktree mode."
+  SPAWN='same-dir'
+fi
 while true; do
   if claude auth status 2>/dev/null | grep -qi 'claude.ai'; then
-    echo "[rc-supervisor] starting: claude remote-control --name '${RC_NAME}'"
-    claude remote-control --name '${RC_NAME}'
+    echo "[rc-supervisor] starting: claude remote-control --name '${RC_NAME}' --spawn \$SPAWN"
+    claude remote-control --name '${RC_NAME}' --spawn "\$SPAWN"
     echo "[rc-supervisor] remote-control exited (code \$?). Restarting in ${RESTART_DELAY}s..."
   else
     echo "[rc-supervisor] not logged in to claude.ai. Run 'claude' then '/login' once."

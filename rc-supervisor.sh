@@ -1,41 +1,38 @@
 #!/usr/bin/env bash
-# Keeps `claude remote-control` alive inside a tmux session, relaunching it
-# whenever it exits (e.g. after the ~10-minute network-outage timeout).
+# Option B supervisor: discovers every git repo under WORKSPACE and starts a
+# named interactive `claude --remote-control "<repo>"` session for each, one per
+# tmux window inside a single tmux session ("cc"). Each session shows up as a
+# named, tappable entry in the Claude app's Code tab.
+#
+# Each per-repo loop relaunches its session if it exits (e.g. after the ~10-min
+# network-outage timeout).
 #
 # Driven by these env vars (set in the stack):
-#   AUTO_REMOTE_CONTROL=1     enable
-#   RC_PROJECT_DIR=/workspace project dir the session opens in
-#   RC_SESSION_NAME=claude-dev session title at claude.ai/code
-#   RC_SPAWN_MODE=worktree    same-dir | worktree | session (default worktree)
-#   RC_RESTART_DELAY=10       seconds to wait between relaunches (default 10)
+#   AUTO_REMOTE_CONTROL=1     enable (handled by entrypoint)
+#   WORKSPACE=/workspace      root dir scanned for git repos (default /workspace)
+#   RC_RESTART_DELAY=10       seconds between relaunches (default 10)
+#   RC_RESCAN_INTERVAL=60     seconds between scans for newly-added repos (default 60)
 
 set -u
 
-PROJECT_DIR="${RC_PROJECT_DIR:-/workspace}"
-RC_NAME="${RC_SESSION_NAME:-claude-dev}"
+WORKSPACE="${WORKSPACE:-/workspace}"
 RESTART_DELAY="${RC_RESTART_DELAY:-10}"
-SPAWN_MODE="${RC_SPAWN_MODE:-worktree}"
+RESCAN_INTERVAL="${RC_RESCAN_INTERVAL:-60}"
 TMUX_SESSION="cc"
 
 log() { echo "[rc-supervisor] $*"; }
 
-# Build the loop that runs *inside* tmux. It restarts claude on every exit.
-# We guard on claude.ai login each iteration so a logged-out container just
-# waits and logs instead of spinning on instant failures.
-read -r -d '' INNER_LOOP <<EOF || true
-cd '${PROJECT_DIR}'
-SPAWN='${SPAWN_MODE}'
-# worktree mode needs the project dir to be a git repo; fall back to same-dir if not
-if [ "\$SPAWN" = "worktree" ] && ! git -C '${PROJECT_DIR}' rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  echo "[rc-supervisor] '${PROJECT_DIR}' is not a git repo; worktree mode needs one."
-  echo "[rc-supervisor] falling back to --spawn same-dir. Point RC_PROJECT_DIR at a repo for worktree mode."
-  SPAWN='same-dir'
-fi
+# A per-repo loop, run inside its own tmux window. Restarts the session on exit.
+# Args: $1 = repo path, $2 = session name
+build_repo_loop() {
+  local dir="$1" name="$2"
+  cat <<EOF
+cd '${dir}'
 while true; do
   if claude auth status 2>/dev/null | grep -qi 'claude.ai'; then
-    echo "[rc-supervisor] starting: claude remote-control --name '${RC_NAME}' --spawn \$SPAWN"
-    claude remote-control --name '${RC_NAME}' --spawn "\$SPAWN"
-    echo "[rc-supervisor] remote-control exited (code \$?). Restarting in ${RESTART_DELAY}s..."
+    echo "[rc-supervisor] starting session '${name}' in ${dir}"
+    claude --remote-control '${name}'
+    echo "[rc-supervisor] session '${name}' exited (code \$?). Restarting in ${RESTART_DELAY}s..."
   else
     echo "[rc-supervisor] not logged in to claude.ai. Run 'claude' then '/login' once."
     echo "[rc-supervisor] retrying in ${RESTART_DELAY}s..."
@@ -43,17 +40,35 @@ while true; do
   sleep ${RESTART_DELAY}
 done
 EOF
+}
 
-# Wait until the project dir exists (first run may clone into the volume later).
-while [ ! -d "${PROJECT_DIR}" ]; do
-  log "waiting for ${PROJECT_DIR} to exist..."
+# Wait for the workspace to exist (volume may populate after first boot).
+while [ ! -d "${WORKSPACE}" ]; do
+  log "waiting for ${WORKSPACE} to exist..."
   sleep 5
 done
 
-# Create the tmux session running the loop, if not already present.
-if tmux has-session -t "${TMUX_SESSION}" 2>/dev/null; then
-  log "tmux session '${TMUX_SESSION}' already exists; leaving it alone."
-else
-  tmux new-session -d -s "${TMUX_SESSION}" "bash -lc \"${INNER_LOOP}\""
-  log "launched tmux session '${TMUX_SESSION}' running the supervised loop."
+# Ensure the tmux session exists (created empty; windows added per repo).
+if ! tmux has-session -t "${TMUX_SESSION}" 2>/dev/null; then
+  tmux new-session -d -s "${TMUX_SESSION}" -n "supervisor" "bash -lc 'sleep infinity'"
+  log "created tmux session '${TMUX_SESSION}'."
 fi
+
+# Scan loop: pick up repos at boot and any added later.
+while true; do
+  for gitdir in "${WORKSPACE}"/*/.git; do
+    [ -e "${gitdir}" ] || continue
+    repo_path="$(dirname "${gitdir}")"
+    repo_name="$(basename "${repo_path}")"
+    win_name="$(echo "${repo_name}" | tr '.:' '__')"
+
+    if tmux list-windows -t "${TMUX_SESSION}" -F '#W' 2>/dev/null | grep -qx "${win_name}"; then
+      continue
+    fi
+
+    log "found repo '${repo_name}' -> starting session window '${win_name}'"
+    loop_cmd="$(build_repo_loop "${repo_path}" "${repo_name}")"
+    tmux new-window -t "${TMUX_SESSION}" -n "${win_name}" "bash -lc \"${loop_cmd}\""
+  done
+  sleep "${RESCAN_INTERVAL}"
+done

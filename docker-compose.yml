@@ -20,6 +20,7 @@ services:
       - WORKSPACE=${WORKSPACE:-/workspace}
       - RC_RESTART_DELAY=${RC_RESTART_DELAY:-10}
       - RC_RESCAN_INTERVAL=${RC_RESCAN_INTERVAL:-60}
+      - RC_PERMISSION_MODE=${RC_PERMISSION_MODE:-bypassPermissions}
     volumes:
       - claude-workspace:/workspace        # your project code; survives rebuilds
       - claude-config:/root/.claude        # persists claude.ai OAuth login

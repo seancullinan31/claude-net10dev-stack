@@ -12,14 +12,27 @@
 #   WORKSPACE=/workspace      root dir scanned for git repos (default /workspace)
 #   RC_RESTART_DELAY=10       seconds between relaunches (default 10)
 #   RC_RESCAN_INTERVAL=60     seconds between scans for newly-added repos (default 60)
+#   RC_PERMISSION_MODE=bypassPermissions
+#                             permission mode each session starts in. One of:
+#                             default | acceptEdits | plan | auto | bypassPermissions
+#                             Use 'default' to pass no flag (normal prompting).
+#                             bypassPermissions = no prompts (safe here: isolated container).
 
 set -u
 
 WORKSPACE="${WORKSPACE:-/workspace}"
 RESTART_DELAY="${RC_RESTART_DELAY:-10}"
 RESCAN_INTERVAL="${RC_RESCAN_INTERVAL:-60}"
+PERMISSION_MODE="${RC_PERMISSION_MODE:-bypassPermissions}"
 TMUX_SESSION="cc"
 LOOP_DIR="/tmp/rc-loops"
+
+# Build the permission-mode flag. 'default' (or empty) means pass no flag.
+if [ -z "${PERMISSION_MODE}" ] || [ "${PERMISSION_MODE}" = "default" ]; then
+  PERM_FLAG=""
+else
+  PERM_FLAG="--permission-mode ${PERMISSION_MODE}"
+fi
 
 log() { echo "[rc-supervisor] $*"; }
 
@@ -36,7 +49,7 @@ cd "${dir}" || exit 1
 while true; do
   if claude auth status 2>/dev/null | grep -qi 'claude.ai'; then
     echo "[rc-supervisor] starting session '${name}' in ${dir}"
-    claude --remote-control "${name}"
+    claude --remote-control "${name}" ${PERM_FLAG}
     echo "[rc-supervisor] session '${name}' exited (code \$?). Restarting in ${RESTART_DELAY}s..."
   else
     echo "[rc-supervisor] not logged in to claude.ai. Run 'claude' then '/login' once."

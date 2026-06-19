@@ -19,6 +19,7 @@ services:
       - AUTO_REMOTE_CONTROL=${AUTO_REMOTE_CONTROL:-0}
       - RC_PROJECT_DIR=${RC_PROJECT_DIR:-/workspace}
       - RC_SESSION_NAME=${RC_SESSION_NAME:-claude-dev}
+      - RC_SPAWN_MODE=${RC_SPAWN_MODE:-worktree}
       - RC_RESTART_DELAY=${RC_RESTART_DELAY:-10}
     volumes:
       - claude-workspace:/workspace        # your project code; survives rebuilds

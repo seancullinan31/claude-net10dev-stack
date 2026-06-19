@@ -19,19 +19,24 @@ WORKSPACE="${WORKSPACE:-/workspace}"
 RESTART_DELAY="${RC_RESTART_DELAY:-10}"
 RESCAN_INTERVAL="${RC_RESCAN_INTERVAL:-60}"
 TMUX_SESSION="cc"
+LOOP_DIR="/tmp/rc-loops"
 
 log() { echo "[rc-supervisor] $*"; }
 
-# A per-repo loop, run inside its own tmux window. Restarts the session on exit.
-# Args: $1 = repo path, $2 = session name
-build_repo_loop() {
-  local dir="$1" name="$2"
-  cat <<EOF
-cd '${dir}'
+mkdir -p "${LOOP_DIR}"
+
+# Write a standalone loop script for one repo, then return its path.
+# Args: $1 = repo path, $2 = session name, $3 = sanitized window/file name
+write_loop_script() {
+  local dir="$1" name="$2" key="$3"
+  local script="${LOOP_DIR}/${key}.sh"
+  cat > "${script}" <<EOF
+#!/usr/bin/env bash
+cd "${dir}" || exit 1
 while true; do
   if claude auth status 2>/dev/null | grep -qi 'claude.ai'; then
     echo "[rc-supervisor] starting session '${name}' in ${dir}"
-    claude --remote-control '${name}'
+    claude --remote-control "${name}"
     echo "[rc-supervisor] session '${name}' exited (code \$?). Restarting in ${RESTART_DELAY}s..."
   else
     echo "[rc-supervisor] not logged in to claude.ai. Run 'claude' then '/login' once."
@@ -40,6 +45,8 @@ while true; do
   sleep ${RESTART_DELAY}
 done
 EOF
+  chmod +x "${script}"
+  echo "${script}"
 }
 
 # Wait for the workspace to exist (volume may populate after first boot).
@@ -48,7 +55,7 @@ while [ ! -d "${WORKSPACE}" ]; do
   sleep 5
 done
 
-# Ensure the tmux session exists (created empty; windows added per repo).
+# Ensure the tmux session exists (created with a holding window).
 if ! tmux has-session -t "${TMUX_SESSION}" 2>/dev/null; then
   tmux new-session -d -s "${TMUX_SESSION}" -n "supervisor" "bash -lc 'sleep infinity'"
   log "created tmux session '${TMUX_SESSION}'."
@@ -67,8 +74,8 @@ while true; do
     fi
 
     log "found repo '${repo_name}' -> starting session window '${win_name}'"
-    loop_cmd="$(build_repo_loop "${repo_path}" "${repo_name}")"
-    tmux new-window -t "${TMUX_SESSION}" -n "${win_name}" "bash -lc \"${loop_cmd}\""
+    script_path="$(write_loop_script "${repo_path}" "${repo_name}" "${win_name}")"
+    tmux new-window -t "${TMUX_SESSION}" -n "${win_name}" "bash '${script_path}'"
   done
   sleep "${RESCAN_INTERVAL}"
 done

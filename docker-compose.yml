@@ -15,6 +15,9 @@ services:
       - GH_TOKEN=${GH_TOKEN}
       - GIT_AUTHOR_NAME=${GIT_AUTHOR_NAME}
       - GIT_AUTHOR_EMAIL=${GIT_AUTHOR_EMAIL}
+      # Per-host PATs for non-GitHub providers (Azure DevOps, etc.).
+      # Format: host|username|PAT  — multiple separated by ';'
+      - GIT_CREDENTIALS=${GIT_CREDENTIALS:-}
       # keep ALL Claude Code state (login, theme, onboarding, trust, .claude.json)
       # inside the mounted claude-config volume so it survives rebuilds
       - CLAUDE_CONFIG_DIR=/root/.claude

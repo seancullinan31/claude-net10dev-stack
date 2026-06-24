@@ -38,7 +38,9 @@ if [ -n "${GIT_CREDENTIALS:-}" ]; then
   git config --global credential.helper store 2>/dev/null || true
 
   # parse entries: split on ';' and newlines, then on '|'
-  printf '%s' "${GIT_CREDENTIALS}" | tr ';' '\n' | while IFS='|' read -r host user pat; do
+  # NOTE: trailing '\n' is REQUIRED — without it, `while read` drops the final
+  # (or only) entry when there's no trailing ';'. This bit us with one provider.
+  printf '%s\n' "${GIT_CREDENTIALS}" | tr ';' '\n' | while IFS='|' read -r host user pat; do
     host="$(echo "${host}" | xargs)"   # trim
     user="$(echo "${user}" | xargs)"
     pat="$(echo "${pat}" | xargs)"

@@ -74,7 +74,42 @@ docker exec claude-dev bash -c 'jq ".projects[\"/workspace/NEW-REPO\"].hasTrustD
 
 ---
 
-## Permission modes (RC_PERMISSION_MODE)
+## Multiple git providers (GitHub + Azure DevOps, etc.)
+
+Auth is per-host. GitHub uses `gh` + `GH_TOKEN`. Other providers use git's
+credential store, fed by the `GIT_CREDENTIALS` stack env var:
+
+```
+GIT_CREDENTIALS=host|username|PAT;host2|username2|PAT2
+```
+
+Example (FPS on personal Azure DevOps):
+```
+GIT_CREDENTIALS=seancullinan.visualstudio.com|seancullinan|<PAT>
+```
+Add USViking later by appending `;usviking.visualstudio.com|seancullinan|<PAT>`.
+
+- Azure DevOps PAT scope: **Code (Read & Write)**.
+- Each host is distinct, so git matches the right PAT by host automatically.
+- The entrypoint writes `/root/.git-credentials` from this var on every boot.
+
+Adding a repo from any provider: `~/add-repo-to-claude.sh` accepts GitHub
+`owner/name` shorthand OR a full clone URL (Azure DevOps, etc.). It detects the
+host, clones with the right method, and pre-accepts trust.
+
+Verify a provider credential is registered (PAT masked):
+```bash
+docker exec claude-dev cat /root/.git-credentials | sed -E 's#:[^:@]+@#:****@#g'
+```
+
+**GOTCHA (cost us an afternoon):** the entrypoint parses `GIT_CREDENTIALS` with
+`printf '%s\n' | tr ';' '\n' | while read`. The trailing `\n` is REQUIRED — without
+it, `while read` silently drops the final/only entry when there's no trailing ';'.
+Symptom: credential file empty with one provider, but "magically" works with two.
+
+---
+
+
 
 Set on the stack in Portainer, or relies on the built-in default `auto`.
 
